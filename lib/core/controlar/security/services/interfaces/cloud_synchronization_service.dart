@@ -1,52 +1,28 @@
-// lib/security/services/interfaces/cloud_synchronization_service.dart
-import 'package:camera/camera.dart';
+// lib/core/controlar/security/services/interfaces/cloud_synchronization_service.dart
 
-/// واجهة خدمة مزامنة البيانات السحابية
-/// توفر اتصالاً آمناً مع خدمات الامتثال والتحقق
+import 'dart:typed_data';
+
+/// واجهة للتزامن مع الخدمات السحابية
 abstract class CloudSynchronizationService {
-  /// تهيئة نقطة الاتصال بالخدمة السحابية
-  Future<bool> initializeEndpoint({
-    required String endpoint,
-    required String clientId,
-    Map<String, String>? additionalHeaders,
-  });
-  
-  /// إغلاق الاتصال بنقطة الاتصال
-  void closeEndpointConnection();
-  
-  /// التحقق من حالة الاتصال بالخدمة
-  bool get isEndpointConnected;
-  
-  /// تدفق حالة الاتصال بالخدمة
-  Stream<bool> get endpointStatusStream;
-  
-  /// إرسال بيانات التشخيص
-  Future<bool> submitDiagnosticData(Map<String, dynamic> diagnosticData);
-  
-  /// مزامنة ملف تقييم مع الخدمة السحابية
-  Future<bool> synchronizeAssessmentAsset({
-    required String assetId,
-    required XFile asset,
-    required String assessmentType,
-    Map<String, dynamic>? metadata,
-  });
-  
-  /// إرسال إشارة طوارئ للخدمة السحابية
-  Future<bool> sendEmergencySignal(String signalType);
-  
-  /// تحميل تقرير تقييم للخدمة السحابية
-  Future<Map<String, dynamic>?> fetchAssessmentReport(String reportId);
-  
-  /// تلقي تعليمات وإجراءات الامتثال
-  Stream<Map<String, dynamic>> get complianceInstructionsStream;
-  
-  /// الإشارة إلى إكمال إجراء امتثال
-  Future<bool> signalComplianceActionComplete({
-    required String actionId,
-    required bool successful,
-    String? message,
-  });
-  
-  /// تحرير الموارد
-  void disposeService();
+  /// التحقق من حالة الاتصال بالخدمة السحابية
+  Future<bool> checkConnectionStatus();
+
+  /// تحميل بيانات إلى الخدمة السحابية
+  Future<bool> uploadData(String dataId, Map<String, dynamic> data);
+
+  /// تحميل ملف إلى الخدمة السحابية
+  Future<String?> uploadFile(
+      String fileId, Uint8List fileData, String fileName);
+
+  /// تنزيل بيانات من الخدمة السحابية
+  Future<Map<String, dynamic>?> downloadData(String dataId);
+
+  /// تنزيل ملف من الخدمة السحابية
+  Future<Uint8List?> downloadFile(String fileId);
+
+  /// التحقق من وجود تحديثات للبيانات
+  Future<bool> checkForUpdates(String dataId, DateTime lastSyncTime);
+
+  /// مزامنة البيانات المحلية مع الخدمة السحابية
+  Future<bool> synchronizeData(String dataId, Map<String, dynamic> localData);
 }

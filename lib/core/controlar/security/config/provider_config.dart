@@ -1,91 +1,66 @@
-// lib/security/config/provider_config.dart
+// lib/core/controlar/security/config/provider_config.dart
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+// استيراد التنفيذات
 import '../services/implementations/local_hardware_manager_impl.dart';
 import '../services/implementations/user_verification_service_impl.dart';
 import '../services/implementations/regional_compliance_service_impl.dart';
-import '../services/implementations/cloud_sync_service_impl.dart';
 import '../services/implementations/local_storage_utility_impl.dart';
 
+// استيراد الواجهات
 import '../services/interfaces/local_hardware_manager.dart';
-import '../services/interfaces/user_verification_service.dart';
 import '../services/interfaces/regional_compliance_service.dart';
-import '../services/interfaces/cloud_synchronization_service.dart';
 import '../services/interfaces/local_storage_utility.dart';
 
+// استيراد المدراء
 import '../operations/operation_template_manager.dart';
 import '../processing/data_processing_manager.dart';
-import '../analytics/security_analytics_provider.dart';
 
-// مزودات الخدمات
-final localHardwareManagerProvider = Provider<LocalHardwareManager>((ref) => LocalHardwareManagerImpl());
+// مزودات خدمات الأمان
 
-final userVerificationServiceProvider = Provider<UserVerificationService>((ref) {
-  final service = UserVerificationServiceImpl();
-  ref.onDispose(() {
-    service.stopVerificationServices();
-  });
-  return service;
+/// مزود لخدمة إدارة الأجهزة المحلية
+final localHardwareManagerProvider = Provider<LocalHardwareManager>((ref) {
+  return LocalHardwareManagerImpl();
 });
 
-final regionalComplianceServiceProvider = Provider<RegionalComplianceService>((ref) => RegionalComplianceServiceImpl());
-
-final cloudSynchronizationServiceProvider = Provider<CloudSynchronizationService>((ref) {
-  final service = CloudSyncServiceImpl();
-  ref.onDispose(() {
-    service.disposeService();
-  });
-  return service;
+/// مزود لخدمة التحقق من المستخدم
+final userVerificationServiceProvider =
+    Provider<UserVerificationServiceImpl>((ref) {
+  return UserVerificationServiceImpl();
 });
 
-final localStorageUtilityProvider = Provider<LocalStorageUtility>((ref) => LocalStorageUtilityImpl());
-
-// مزودات المديرين
-final operationTemplateManagerProvider = Provider<OperationTemplateManager>((ref) {
-  return OperationTemplateManager(
-    verificationService: ref.watch(userVerificationServiceProvider),
-    complianceService: ref.watch(regionalComplianceServiceProvider),
-    storageUtility: ref.watch(localStorageUtilityProvider),
-    cloudSync: ref.watch(cloudSynchronizationServiceProvider),
-  );
+/// مزود لخدمة التوافق الإقليمي
+final regionalComplianceServiceProvider =
+    Provider<RegionalComplianceService>((ref) {
+  return RegionalComplianceServiceImpl();
 });
 
+/// مزود لخدمة التخزين المحلي
+final localStorageUtilityProvider = Provider<LocalStorageUtility>((ref) {
+  return LocalStorageUtilityImpl();
+});
+
+/// مزود لمدير قوالب العمليات
+final operationTemplateManagerProvider =
+    Provider<OperationTemplateManager>((ref) {
+  return OperationTemplateManager();
+});
+
+/// مزود لمدير معالجة البيانات
 final dataProcessingManagerProvider = Provider<DataProcessingManager>((ref) {
-  final manager = DataProcessingManager(
-    operationTemplateManager: ref.watch(operationTemplateManagerProvider),
-    cloudSync: ref.watch(cloudSynchronizationServiceProvider),
-    hardwareManager: ref.watch(localHardwareManagerProvider),
-  );
-  ref.onDispose(() {
-    manager.cancelActiveOperations();
-  });
-  return manager;
+  return DataProcessingManager();
 });
 
-// المزود الرئيسي
-final securityAnalyticsProvider = Provider<SecurityAnalyticsProvider>((ref) {
-  // بناء حاوية للمزودات
-  final container = ProviderContainer();
-  final provider = SecurityAnalyticsProvider(container);
-  
-  ref.onDispose(() {
-    provider.releaseAnalyticsResources();
-    container.dispose();
-  });
-  
-  return provider;
-});
-
-// مزود مساعد للحصول على نطاق مخصص
-final customEndpointSecurityAnalyticsProvider = Provider.family<SecurityAnalyticsProvider, String>((ref, endpoint) {
-  // بناء حاوية للمزودات
-  final container = ProviderContainer();
-  final provider = SecurityAnalyticsProvider(container, customEndpoint: endpoint);
-  
-  ref.onDispose(() {
-    provider.releaseAnalyticsResources();
-    container.dispose();
-  });
-  
-  return provider;
+/// مزود للإعدادات الأمنية
+final securitySettingsProvider = Provider<Map<String, dynamic>>((ref) {
+  return {
+    'encryption_level': 'high',
+    'secure_boot_required': true,
+    'biometric_auth_enabled': true,
+    'minimum_pin_length': 6,
+    'session_timeout_minutes': 30,
+    'location_tracking_enabled': false,
+    'debug_mode_enabled': false,
+  };
 });
